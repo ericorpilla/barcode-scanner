@@ -186,6 +186,9 @@
                 hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, formats);
                 // Tell the library to spend more effort decoding
                 hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+                // *** THIS IS THE KEY FIX FOR GS1 ***
+                // Tell the library to assume the barcode is a GS1 type
+                hints.set(ZXing.DecodeHintType.ASSUME_GS1, true);
 
                 // Initialize the ZXing code reader with the hints
                 codeReader = new ZXing.BrowserMultiFormatReader(hints);
@@ -261,8 +264,6 @@
                             // An error other than "not found" occurred
                             console.error('ZXing detection error:', err);
                             // We don't show this error to the user as it can be noisy
-                            // infoMessage.textContent = `Error: ${err.message}`;
-                            // stopScan();
                         }
                     });
                 } catch (err) {
