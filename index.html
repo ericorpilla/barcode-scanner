@@ -62,15 +62,16 @@
             display: block;
         }
         
-        /* Red line to guide the user */
+        /* Red square to guide the user */
         .scan-line {
             position: absolute;
             top: 50%;
-            left: 5%;
-            right: 5%;
-            height: 2px;
-            background-color: red;
-            box-shadow: 0 0 10px red;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 75%;
+            height: 50%;
+            border: 2px solid red;
+            box-shadow: 0 0 15px rgba(255, 0, 0, 0.7);
             display: none; /* Hidden until scanning starts */
         }
         
