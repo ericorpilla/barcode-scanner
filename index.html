@@ -158,6 +158,7 @@
             let stream = null; // To hold the camera stream
             let barcodeDetector = null;
             let isScanning = false;
+            let audioContext; // To hold the AudioContext for the beep sound
 
             // --- Feature Detection ---
             // Check if the Barcode Detection API is supported by the browser
@@ -189,8 +190,43 @@
                 return;
             }
 
+            // --- Audio Beep Function ---
+            /**
+             * Plays a short beep sound using the Web Audio API.
+             */
+            function playBeep() {
+                if (!audioContext) return; // Don't play if context isn't ready
+
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+
+                // Configure the beep sound
+                oscillator.frequency.value = 880; // A high-pitched beep (A5 note)
+                oscillator.type = 'sine'; // A clean sound
+
+                // Control the volume to make it a short "beep"
+                gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+                gainNode.gain.linearRampToValueAtTime(0.5, audioContext.currentTime + 0.05); // Ramp up to 50% volume
+                gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.2); // Ramp down to 0 over 0.2s
+
+                oscillator.start();
+                oscillator.stop(audioContext.currentTime + 0.2); // Stop the sound after 0.2 seconds
+            }
+
             // --- Event Listener for the Scan Button ---
             scanButton.addEventListener('click', async () => {
+                // Initialize AudioContext on the first user interaction (required by browsers)
+                if (!audioContext) {
+                    try {
+                        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    } catch (e) {
+                        console.warn("Web Audio API is not supported in this browser.");
+                    }
+                }
+
                 if (isScanning) {
                     stopScan();
                 } else {
@@ -269,6 +305,9 @@
                         resultText.textContent = foundBarcode;
                         infoMessage.textContent = 'Success! Camera will stop shortly.';
                         
+                        // Play beep sound
+                        playBeep();
+
                         // Vibrate to give feedback (if supported)
                         if ('vibrate' in navigator) {
                             navigator.vibrate(200); // Vibrate for 200ms
