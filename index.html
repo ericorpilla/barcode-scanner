@@ -41,7 +41,6 @@
             border-radius: 12px;
             background-color: #333;
             display: none; /* Hidden by default */
-            transform: scaleX(-1); /* Flips the video horizontally to feel more like a mirror, optional */
         }
         
         /* Styling for the scanner overlay */
@@ -332,7 +331,7 @@
             async function detectBarcode() {
                 if (!isScanning || !barcodeDetector) return;
                 try {
-                    const barcodes = await barcodeDetector.detect(video);
+                    const barcodes = await detector.detect(video);
                     if (barcodes.length > 0) {
                         isScanning = false; // Stop detection loop
                         const foundBarcode = barcodes[0].rawValue;
