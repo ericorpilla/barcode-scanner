@@ -254,58 +254,89 @@
             
             /**
              * Parses a raw GS1-128 data string to find specific Application Identifiers (AIs).
-             * This version correctly handles the FNC1 separator for variable-length fields.
+             * This version is more robust and handles prefixes and variable-length fields.
              * @param {string} data The raw string from the barcode.
              * @returns {object} An object containing the found values.
              */
             function parseGS1Data(data) {
                 const result = { gtin: 'N/A', expiry: 'N/A', lot: 'N/A' };
                 const fnc1 = String.fromCharCode(29); // FNC1 separator
-                let remainingData = data;
 
-                // AIs and their fixed lengths. Variable length is handled as a special case.
-                const aiDefs = { 
-                    '01': { name: 'gtin', length: 14 }, 
-                    '17': { name: 'expiry', length: 6 }
+                // AI definitions: { length: number (fixed) or null (variable), name: string }
+                const aiDefs = {
+                    '01': { length: 14, name: 'gtin' },
+                    '17': { length: 6, name: 'expiry' },
+                    '10': { length: null, name: 'lot' } // Variable length
                 };
 
-                while (remainingData.length > 2) {
-                    const ai = remainingData.substring(0, 2);
+                // Find the first valid AI and start parsing from there to ignore prefixes.
+                let startIndex = -1;
+                for (const ai in aiDefs) {
+                    const pos = data.indexOf(ai);
+                    if (pos !== -1 && (startIndex === -1 || pos < startIndex)) {
+                        startIndex = pos;
+                    }
+                }
+
+                if (startIndex === -1) {
+                    console.warn("No valid GS1 Application Identifiers found in the data:", data);
+                    return result; // Return default N/A values
+                }
+
+                let remainingData = data.substring(startIndex);
+
+                while (remainingData.length > 0) {
+                    const currentAi = remainingData.substring(0, 2);
                     let consumed = false;
 
-                    if (ai === '10') { // Handle variable-length AI (10) for LOT
+                    if (aiDefs[currentAi] && aiDefs[currentAi].length !== null) { // Fixed-length AI
+                        const def = aiDefs[currentAi];
+                        const dataLength = def.length;
+                        
+                        if (remainingData.length >= 2 + dataLength) {
+                            const value = remainingData.substring(2, 2 + dataLength);
+                            if (def.name === 'gtin') {
+                                result.gtin = value;
+                            } else if (def.name === 'expiry') {
+                                const year = `20${value.substring(0, 2)}`;
+                                const month = value.substring(2, 4);
+                                const day = value.substring(4, 6);
+                                result.expiry = `${day}/${month}/${year}`;
+                            }
+                            remainingData = remainingData.substring(2 + dataLength);
+                            consumed = true;
+                        }
+                    } else if (currentAi === '10') { // Variable-length LOT AI
                         let lotData = remainingData.substring(2);
-                        const separatorIndex = lotData.indexOf(fnc1);
+                        let separatorIndex = lotData.indexOf(fnc1);
+
+                        if (separatorIndex === -1) {
+                            // If no FNC1, check for the start of another known AI
+                            for (const nextAi in aiDefs) {
+                                let nextPos = lotData.indexOf(nextAi);
+                                if (nextPos > 0 && (separatorIndex === -1 || nextPos < separatorIndex)) {
+                                    separatorIndex = nextPos;
+                                }
+                            }
+                        }
+
                         if (separatorIndex !== -1) {
                             result.lot = lotData.substring(0, separatorIndex);
-                            remainingData = lotData.substring(separatorIndex + 1);
+                            remainingData = lotData.substring(separatorIndex);
                         } else {
-                            // If no FNC1, assume it's the last element.
+                            // If no separator or next AI, it's the last field.
                             result.lot = lotData;
-                            remainingData = '';
+                            remainingData = "";
                         }
-                        consumed = true;
-                    } else if (aiDefs[ai]) { // Handle fixed-length AIs
-                        const def = aiDefs[ai];
-                        const value = remainingData.substring(2, 2 + def.length);
-                        
-                        if (def.name === 'gtin') {
-                            result.gtin = value;
-                        } else if (def.name === 'expiry') {
-                            const year = `20${value.substring(0, 2)}`;
-                            const month = value.substring(2, 4);
-                            const day = value.substring(4, 6);
-                            result.expiry = `${day}/${month}/${year}`;
-                        }
-                        
-                        remainingData = remainingData.substring(2 + def.length);
                         consumed = true;
                     }
 
                     if (!consumed) {
-                        break; // Unrecognized AI, stop parsing.
+                        console.warn("Could not parse remaining data:", remainingData);
+                        break; // Stop if we can't parse the current segment
                     }
                 }
+
                 return result;
             }
 
