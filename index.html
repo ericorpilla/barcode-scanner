@@ -245,12 +245,20 @@
                 infoMessage.textContent = 'Starting camera...';
                 video.classList.add('active');
 
+                // --- Define constraints for a faster, more efficient video stream ---
+                const constraints = {
+                    video: {
+                        facingMode: 'environment',
+                        width: { ideal: 640 }, // Lower resolution for faster processing
+                        height: { ideal: 480 }
+                    }
+                };
+
                 try {
-                    // Use ZXing to decode from the video stream
-                    await codeReader.decodeFromVideoDevice(undefined, 'video-preview', (result, err) => {
+                    // Use decodeFromConstraints for better performance
+                    await codeReader.decodeFromConstraints(constraints, 'video-preview', (result, err) => {
                         if (result) {
                             // A barcode was successfully found
-                            isScanning = false; // Stop further scanning
                             codeReader.reset(); // Stop the camera stream
                             
                             const foundBarcode = result.getText();
@@ -269,6 +277,8 @@
             }
             
             function handleFoundBarcode(barcodeData) {
+                // Set scanning to false immediately to prevent re-triggering
+                isScanning = false; 
                 playBeep();
                 if ('vibrate' in navigator) navigator.vibrate(200);
 
@@ -318,11 +328,14 @@
             function finalizeScan(displayHtml, message) {
                  resultText.innerHTML = displayHtml;
                  infoMessage.textContent = message;
+                 // --- Reset the UI after a successful scan ---
+                 video.classList.remove('active');
+                 scanButton.textContent = 'Start Scan';
             }
 
             function parseGS1Data(data) {
                 const result = { gtin: 'N/A', expiry: 'N/A', lot: 'N/A' };
-                // The FNC1 character is often represented as ASCII character 29
+                // The FNC1 character is often represented as ASCII character 29 or \x1d
                 const fnc1 = String.fromCharCode(29); 
                 const dataWithSeparators = data.replace(/\x1d/g, fnc1); // Ensure all FNC1 codes are consistent
 
