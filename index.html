@@ -253,7 +253,8 @@
             }
             
             /**
-             * Parses a raw GS1 data string to find specific Application Identifiers (AIs).
+             * Parses a raw GS1-128 data string to find specific Application Identifiers (AIs).
+             * This version correctly handles the FNC1 separator for variable-length fields.
              * @param {string} data The raw string from the barcode.
              * @returns {object} An object containing the found values.
              */
@@ -263,7 +264,10 @@
                     expiry: 'N/A',
                     lot: 'N/A'
                 };
-                
+
+                // The FNC1 separator is often represented by the non-printable ASCII Group Separator character.
+                const fnc1 = String.fromCharCode(29);
+
                 // AIs to search for
                 const ais = {
                     GTIN: '01',
@@ -273,7 +277,7 @@
 
                 // Find GTIN (AI 01) - fixed length of 14
                 let gtinIndex = data.indexOf(ais.GTIN);
-                if (gtinIndex !== -1) {
+                if (gtinIndex !== -1 && gtinIndex === 0) { // Should be at the start
                     const gtin = data.substring(gtinIndex + ais.GTIN.length, gtinIndex + ais.GTIN.length + 14);
                     if (gtin.length === 14) {
                         result.gtin = gtin;
@@ -292,32 +296,39 @@
                     }
                 }
 
-                // Find LOT Number (AI 10) - variable length
+                // Find LOT Number (AI 10) - variable length, terminated by FNC1 or end of string
                 let lotIndex = data.indexOf(ais.LOT);
                 if (lotIndex !== -1) {
                     let lotData = data.substring(lotIndex + ais.LOT.length);
-                    // Find the start of the next AI to determine the end of the LOT number
-                    let nextAiIndex = -1;
-                    const nextGtinIndex = lotData.indexOf(ais.GTIN);
-                    const nextExpiryIndex = lotData.indexOf(ais.EXPIRY);
-
-                    if (nextGtinIndex > 0 && nextExpiryIndex > 0) {
-                        nextAiIndex = Math.min(nextGtinIndex, nextExpiryIndex);
-                    } else if (nextGtinIndex > 0) {
-                        nextAiIndex = nextGtinIndex;
-                    } else if (nextExpiryIndex > 0) {
-                        nextAiIndex = nextExpiryIndex;
-                    }
                     
-                    if (nextAiIndex !== -1) {
-                        result.lot = lotData.substring(0, nextAiIndex);
+                    // Check for the FNC1 separator
+                    const separatorIndex = lotData.indexOf(fnc1);
+                    
+                    if (separatorIndex !== -1) {
+                        // If separator exists, LOT is the string before it
+                        result.lot = lotData.substring(0, separatorIndex);
                     } else {
-                        result.lot = lotData; // Assume it's the rest of the string
+                        // If no separator, it might be the last element. We check for other AIs.
+                        let nextAiIndex = -1;
+                        const nextGtinIndex = lotData.indexOf(ais.GTIN);
+                        const nextExpiryIndex = lotData.indexOf(ais.EXPIRY);
+                        
+                        if (nextGtinIndex > 0) nextAiIndex = nextGtinIndex;
+                        if (nextExpiryIndex > 0 && (nextAiIndex === -1 || nextExpiryIndex < nextAiIndex)) {
+                            nextAiIndex = nextExpiryIndex;
+                        }
+
+                        if (nextAiIndex !== -1) {
+                            result.lot = lotData.substring(0, nextAiIndex);
+                        } else {
+                            result.lot = lotData; // Assume it's the rest of the string
+                        }
                     }
                 }
 
                 return result;
             }
+
 
             /**
              * Handles the final display and stops the scan after a delay.
