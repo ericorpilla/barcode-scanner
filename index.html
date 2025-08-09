@@ -77,12 +77,12 @@
     </footer>
 
     <!-- ZXing Library (Bundled UMD version for better compatibility) -->
-    <!-- The onload attribute ensures our initScanner function runs only after the library is fully loaded -->
-    <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.20.0/umd/zxing.min.js" onload="initScanner()"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.20.0/umd/zxing.min.js"></script>
     
     <script>
-        // This function contains all the page logic and is called by the onload event in the script tag above.
-        function initScanner() {
+        // Use window.addEventListener('load', ...) to ensure the entire page,
+        // including the ZXing library, is fully loaded before the script runs.
+        window.addEventListener('load', () => {
             // Get references to the HTML elements
             const videoElement = document.getElementById('video');
             const videoContainer = document.getElementById('video-container');
@@ -92,7 +92,7 @@
             const sourceSelectPanel = document.getElementById('sourceSelectPanel');
             const copyButton = document.getElementById('copyButton');
             
-            // Check if the ZXing library is loaded. This is a fallback in case onload fails.
+            // Check if the ZXing library is loaded.
             if (typeof ZXing === 'undefined') {
                 console.error('ZXing library not loaded.');
                 resultElement.innerHTML = '<b>Error:</b> Could not load the scanning library. Please check your internet connection and refresh.';
@@ -256,7 +256,7 @@
 
             // Initialize camera selection when the page loads
             setupCameraSelection();
-        }
+        });
     </script>
 
 </body>
