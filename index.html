@@ -106,7 +106,7 @@
             padding: 15px;
             background-color: #1e1e1e;
             border-radius: 8px;
-            min-height: 50px;
+            min-height: 80px; /* Increased height for more data */
             display: flex;
             align-items: center;
             justify-content: center;
@@ -114,9 +114,12 @@
         }
         
         #result-text {
-            font-size: 1.2em;
+            font-size: 1.1em;
             font-weight: bold;
             color: #4CAF50; /* Green color for success */
+            text-align: left; /* Align text to the left for readability */
+            line-height: 1.6; /* Add space between lines */
+            width: 100%;
         }
 
         /* Informational messages */
@@ -138,7 +141,7 @@
         </div>
 
         <div id="result-container">
-            <p id="result-text">Scan result will appear here</p>
+            <div id="result-text">Scan result will appear here</div>
         </div>
 
         <button id="scan-button">Start Scan</button>
@@ -161,27 +164,21 @@
             let audioContext; // To hold the AudioContext for the beep sound
 
             // --- Feature Detection ---
-            // Check if the Barcode Detection API is supported by the browser
             if (!('BarcodeDetector' in window)) {
                 infoMessage.textContent = 'Sorry, your browser does not support barcode scanning.';
                 scanButton.disabled = true;
-                return; // Exit if not supported
+                return;
+            }
+            if (!('geolocation' in navigator)) {
+                infoMessage.textContent = 'Geolocation is not supported by your browser.';
             }
 
             // --- Barcode Detector Initialization ---
             try {
-                // Initialize the detector. You can specify multiple formats.
-                // GS1 data is often encoded in these formats, including 2D formats.
                 barcodeDetector = new BarcodeDetector({
                     formats: [
-                        'ean_13',
-                        'ean_8',
-                        'upc_a',
-                        'upc_e',
-                        'code_128',
-                        'qr_code',
-                        'data_matrix', // Added for 2D GS1 DataMatrix
-                        'pdf417'       // Added for other 2D GS1 barcodes
+                        'ean_13', 'ean_8', 'upc_a', 'upc_e',
+                        'code_128', 'qr_code', 'data_matrix', 'pdf417'
                     ]
                 });
             } catch (e) {
@@ -191,34 +188,23 @@
             }
 
             // --- Audio Beep Function ---
-            /**
-             * Plays a short beep sound using the Web Audio API.
-             */
             function playBeep() {
-                if (!audioContext) return; // Don't play if context isn't ready
-
+                if (!audioContext) return;
                 const oscillator = audioContext.createOscillator();
                 const gainNode = audioContext.createGain();
-
                 oscillator.connect(gainNode);
                 gainNode.connect(audioContext.destination);
-
-                // Configure the beep sound
-                oscillator.frequency.value = 880; // A high-pitched beep (A5 note)
-                oscillator.type = 'sine'; // A clean sound
-
-                // Control the volume to make it a short "beep"
+                oscillator.frequency.value = 880;
+                oscillator.type = 'sine';
                 gainNode.gain.setValueAtTime(0, audioContext.currentTime);
-                gainNode.gain.linearRampToValueAtTime(0.5, audioContext.currentTime + 0.05); // Ramp up to 50% volume
-                gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.2); // Ramp down to 0 over 0.2s
-
+                gainNode.gain.linearRampToValueAtTime(0.5, audioContext.currentTime + 0.05);
+                gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.2);
                 oscillator.start();
-                oscillator.stop(audioContext.currentTime + 0.2); // Stop the sound after 0.2 seconds
+                oscillator.stop(audioContext.currentTime + 0.2);
             }
 
             // --- Event Listener for the Scan Button ---
             scanButton.addEventListener('click', async () => {
-                // Initialize AudioContext on the first user interaction (required by browsers)
                 if (!audioContext) {
                     try {
                         audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -226,7 +212,6 @@
                         console.warn("Web Audio API is not supported in this browser.");
                     }
                 }
-
                 if (isScanning) {
                     stopScan();
                 } else {
@@ -235,47 +220,28 @@
             });
 
             // --- Core Functions ---
-
-            /**
-             * Starts the camera and the scanning process.
-             */
             async function startScan() {
-                // Prevent starting a new scan if one is already active
                 if (isScanning || !barcodeDetector) return;
-
                 try {
-                    // Request access to the user's camera.
-                    // 'environment' prefers the rear camera, which is what we want.
                     stream = await navigator.mediaDevices.getUserMedia({
-                        video: {
-                            facingMode: 'environment'
-                        },
+                        video: { facingMode: 'environment' },
                         audio: false
                     });
-
                     video.srcObject = stream;
                     await video.play();
-                    
-                    // Update UI for scanning state
                     video.classList.add('active');
                     scanButton.textContent = 'Stop Scan';
                     resultText.textContent = 'Point camera at a barcode...';
                     infoMessage.textContent = 'Scanning...';
                     isScanning = true;
-
-                    // Start the detection loop
                     requestAnimationFrame(detectBarcode);
-
                 } catch (err) {
                     console.error("Camera access error:", err);
-                    infoMessage.textContent = 'Could not access the camera. Please grant permission and try again.';
+                    infoMessage.textContent = 'Could not access camera. Please grant permission.';
                     isScanning = false;
                 }
             }
 
-            /**
-             * Stops the camera stream and scanning process.
-             */
             function stopScan() {
                 if (stream) {
                     stream.getTracks().forEach(track => track.stop());
@@ -288,47 +254,51 @@
             }
 
             /**
-             * Continuously detects barcodes from the video stream.
+             * Handles the final display and stops the scan after a delay.
              */
+            function finalizeScan(displayHtml, message) {
+                 resultText.innerHTML = displayHtml;
+                 infoMessage.textContent = message;
+                 setTimeout(() => stopScan(), 2500); // Increased delay to read info
+            }
+
             async function detectBarcode() {
-                // Only run detection if scanning is active and the detector is ready
                 if (!isScanning || !barcodeDetector) return;
-
                 try {
-                    // Detect barcodes in the current video frame
                     const barcodes = await barcodeDetector.detect(video);
-
                     if (barcodes.length > 0) {
-                        // A barcode was found!
-                        isScanning = false; // Stop the detection loop immediately
+                        isScanning = false; // Stop detection loop
                         const foundBarcode = barcodes[0].rawValue;
-                        resultText.textContent = foundBarcode;
-                        infoMessage.textContent = 'Success! Camera will stop shortly.';
                         
-                        // Play beep sound
                         playBeep();
+                        if ('vibrate' in navigator) navigator.vibrate(200);
 
-                        // Vibrate to give feedback (if supported)
-                        if ('vibrate' in navigator) {
-                            navigator.vibrate(200); // Vibrate for 200ms
+                        if ('geolocation' in navigator) {
+                            infoMessage.textContent = 'Success! Getting location...';
+                            navigator.geolocation.getCurrentPosition(
+                                (position) => {
+                                    const lat = position.coords.latitude;
+                                    const lon = position.coords.longitude;
+                                    const displayHtml = `<strong>GS1 Code:</strong> ${foundBarcode}<br><strong>Latitude:</strong> ${lat.toFixed(6)}<br><strong>Longitude:</strong> ${lon.toFixed(6)}`;
+                                    finalizeScan(displayHtml, 'Success! Camera will stop shortly.');
+                                },
+                                (error) => {
+                                    console.warn(`Geolocation error (${error.code}): ${error.message}`);
+                                    const displayHtml = `<strong>GS1 Code:</strong> ${foundBarcode}<br><strong style="color: #ffcc00;">Location:</strong> Not available`;
+                                    finalizeScan(displayHtml, 'Could not get location. Camera will stop shortly.');
+                                }
+                            );
+                        } else {
+                            // Geolocation not supported by browser
+                            const displayHtml = `<strong>GS1 Code:</strong> ${foundBarcode}<br><strong style="color: #ffcc00;">Location:</strong> Not supported`;
+                            finalizeScan(displayHtml, 'Geolocation not supported. Camera will stop shortly.');
                         }
-                        
-                        // Stop scanning after a successful detection with a delay
-                        setTimeout(() => {
-                            stopScan();
-                        }, 1500); // Wait 1.5 seconds before stopping the camera
-                        
                     } else {
-                        // No barcode found, continue the loop
                         requestAnimationFrame(detectBarcode);
                     }
                 } catch (e) {
-                    // This can happen if the video is not ready yet.
-                    // We just continue the loop.
                     console.warn("Detection error:", e.message);
-                    if (isScanning) {
-                       requestAnimationFrame(detectBarcode);
-                    }
+                    if (isScanning) requestAnimationFrame(detectBarcode);
                 }
             }
         })();
