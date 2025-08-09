@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GS1 Code Scanner</title>
+    <style>
+        /* Basic styles for a clean, mobile-first layout */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #121212;
+            color: #e0e0e0;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Main container for the app content */
+        .container {
+            width: 100%;
+            max-width: 600px;
+            padding: 20px;
+            box-sizing: border-box;
+            text-align: center;
+        }
+
+        h1 {
+            color: #ffffff;
+            margin-bottom: 20px;
+        }
+
+        /* Video element for camera stream */
+        #video-preview {
+            width: 100%;
+            height: auto;
+            border-radius: 12px;
+            background-color: #333;
+            display: none; /* Hidden by default */
+        }
+        
+        /* Styling for the scanner overlay */
+        .scanner-overlay {
+            position: relative;
+            width: 100%;
+            padding-top: 75%; /* 4:3 Aspect Ratio */
+            margin-bottom: 20px;
+        }
+
+        #video-preview.active {
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        /* Red line to guide the user */
+        .scan-line {
+            position: absolute;
+            top: 50%;
+            left: 5%;
+            right: 5%;
+            height: 2px;
+            background-color: red;
+            box-shadow: 0 0 10px red;
+            display: none; /* Hidden until scanning starts */
+        }
+        
+        #video-preview.active + .scan-line {
+            display: block;
+        }
+
+        /* Button styling */
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            margin-top: 20px;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+        
+        button:disabled {
+            background-color: #555;
+            cursor: not-allowed;
+        }
+
+        /* Result display area */
+        #result-container {
+            margin-top: 25px;
+            padding: 15px;
+            background-color: #1e1e1e;
+            border-radius: 8px;
+            min-height: 120px; /* Increased height for more data */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            word-break: break-all;
+        }
+        
+        #result-text {
+            font-size: 1.1em;
+            font-weight: bold;
+            color: #4CAF50; /* Green color for success */
+            text-align: left; /* Align text to the left for readability */
+            line-height: 1.6; /* Add space between lines */
+            width: 100%;
+        }
+
+        /* Informational messages */
+        #info-message {
+            margin-top: 15px;
+            color: #aaa;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>GS1 Code Scanner</h1>
+        
+        <div class="scanner-overlay">
+            <video id="video-preview" playsinline></video>
+            <div class="scan-line"></div>
+        </div>
+
+        <div id="result-container">
+            <div id="result-text">Scan result will appear here</div>
+        </div>
+
+        <button id="scan-button">Start Scan</button>
+        
+        <p id="info-message">Click "Start Scan" to use your camera.</p>
+    </div>
+
+    <script>
+        // Immediately-invoked function expression (IIFE) to encapsulate the scanner logic
+        (function() {
+            // DOM element references
+            const video = document.getElementById('video-preview');
+            const scanButton = document.getElementById('scan-button');
+            const resultText = document.getElementById('result-text');
+            const infoMessage = document.getElementById('info-message');
+
+            let stream = null; // To hold the camera stream
+            let barcodeDetector = null;
+            let isScanning = false;
+            let audioContext; // To hold the AudioContext for the beep sound
+
+            // --- Feature Detection ---
+            if (!('BarcodeDetector' in window)) {
+                infoMessage.textContent = 'Sorry, your browser does not support barcode scanning.';
+                scanButton.disabled = true;
+                return;
+            }
+            if (!('geolocation' in navigator)) {
+                infoMessage.textContent = 'Geolocation is not supported by your browser.';
+            }
+
+            // --- Barcode Detector Initialization ---
+            try {
+                barcodeDetector = new BarcodeDetector({
+                    formats: [
+                        'ean_13', 'ean_8', 'upc_a', 'upc_e',
+                        'code_128', 'qr_code', 'data_matrix', 'pdf417'
+                    ]
+                });
+            } catch (e) {
+                infoMessage.textContent = 'Could not initialize barcode detector. ' + e.message;
+                scanButton.disabled = true;
+                return;
+            }
+
+            // --- Audio Beep Function ---
+            function playBeep() {
+                if (!audioContext) return;
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                oscillator.frequency.value = 880;
+                oscillator.type = 'sine';
+                gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+                gainNode.gain.linearRampToValueAtTime(0.5, audioContext.currentTime + 0.05);
+                gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.2);
+                oscillator.start();
+                oscillator.stop(audioContext.currentTime + 0.2);
+            }
+
+            // --- Event Listener for the Scan Button ---
+            scanButton.addEventListener('click', async () => {
+                if (!audioContext) {
+                    try {
+                        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    } catch (e) {
+                        console.warn("Web Audio API is not supported in this browser.");
+                    }
+                }
+                if (isScanning) {
+                    stopScan();
+                } else {
+                    await startScan();
+                }
+            });
+
+            // --- Core Functions ---
+            async function startScan() {
+                if (isScanning || !barcodeDetector) return;
+                try {
+                    stream = await navigator.mediaDevices.getUserMedia({
+                        video: { facingMode: 'environment' },
+                        audio: false
+                    });
+                    video.srcObject = stream;
+                    await video.play();
+                    video.classList.add('active');
+                    scanButton.textContent = 'Stop Scan';
+                    resultText.innerHTML = 'Point camera at a barcode...';
+                    infoMessage.textContent = 'Scanning...';
+                    isScanning = true;
+                    requestAnimationFrame(detectBarcode);
+                } catch (err) {
+                    console.error("Camera access error:", err);
+                    infoMessage.textContent = 'Could not access camera. Please grant permission.';
+                    isScanning = false;
+                }
+            }
+
+            function stopScan() {
+                if (stream) {
+                    stream.getTracks().forEach(track => track.stop());
+                }
+                video.srcObject = null;
+                video.classList.remove('active');
+                scanButton.textContent = 'Start Scan';
+                infoMessage.textContent = 'Scan stopped. Click to start again.';
+                isScanning = false;
+            }
+            
+            /**
+             * Parses a raw GS1-128 data string to find specific Application Identifiers (AIs).
+             * This version is more robust and handles prefixes and variable-length fields.
+             * @param {string} data The raw string from the barcode.
+             * @returns {object} An object containing the found values.
+             */
+            function parseGS1Data(data) {
+                const result = { gtin: 'N/A', expiry: 'N/A', lot: 'N/A' };
+                const fnc1 = String.fromCharCode(29); // FNC1 separator
+
+                // AI definitions: { length: number (fixed) or null (variable), name: string }
+                const aiDefs = {
+                    '01': { length: 14, name: 'gtin' },
+                    '17': { length: 6, name: 'expiry' },
+                    '10': { length: null, name: 'lot' } // Variable length
+                };
+
+                // Find the first valid AI and start parsing from there to ignore prefixes.
+                let startIndex = -1;
+                for (const ai in aiDefs) {
+                    const pos = data.indexOf(ai);
+                    if (pos !== -1 && (startIndex === -1 || pos < startIndex)) {
+                        startIndex = pos;
+                    }
+                }
+
+                if (startIndex === -1) {
+                    console.warn("No valid GS1 Application Identifiers found in the data:", data);
+                    return result; // Return default N/A values
+                }
+
+                let remainingData = data.substring(startIndex);
+
+                while (remainingData.length > 0) {
+                    const currentAi = remainingData.substring(0, 2);
+                    let consumed = false;
+
+                    if (aiDefs[currentAi] && aiDefs[currentAi].length !== null) { // Fixed-length AI
+                        const def = aiDefs[currentAi];
+                        const dataLength = def.length;
+                        
+                        if (remainingData.length >= 2 + dataLength) {
+                            const value = remainingData.substring(2, 2 + dataLength);
+                            if (def.name === 'gtin') {
+                                result.gtin = value;
+                            } else if (def.name === 'expiry') {
+                                const year = `20${value.substring(0, 2)}`;
+                                const month = value.substring(2, 4);
+                                const day = value.substring(4, 6);
+                                result.expiry = `${day}/${month}/${year}`;
+                            }
+                            remainingData = remainingData.substring(2 + dataLength);
+                            consumed = true;
+                        }
+                    } else if (currentAi === '10') { // Variable-length LOT AI
+                        let lotData = remainingData.substring(2);
+                        let separatorIndex = lotData.indexOf(fnc1);
+
+                        if (separatorIndex === -1) {
+                            // If no FNC1, check for the start of another known AI
+                            for (const nextAi in aiDefs) {
+                                let nextPos = lotData.indexOf(nextAi);
+                                if (nextPos > 0 && (separatorIndex === -1 || nextPos < separatorIndex)) {
+                                    separatorIndex = nextPos;
+                                }
+                            }
+                        }
+
+                        if (separatorIndex !== -1) {
+                            result.lot = lotData.substring(0, separatorIndex);
+                            remainingData = lotData.substring(separatorIndex);
+                        } else {
+                            // If no separator or next AI, it's the last field.
+                            result.lot = lotData;
+                            remainingData = "";
+                        }
+                        consumed = true;
+                    }
+
+                    if (!consumed) {
+                        console.warn("Could not parse remaining data:", remainingData);
+                        break; // Stop if we can't parse the current segment
+                    }
+                }
+
+                return result;
+            }
+
+
+            /**
+             * Handles the final display and stops the scan after a delay.
+             */
+            function finalizeScan(displayHtml, message) {
+                 resultText.innerHTML = displayHtml;
+                 infoMessage.textContent = message;
+                 setTimeout(() => stopScan(), 3000); // Increased delay to read info
+            }
+
+            async function detectBarcode() {
+                if (!isScanning || !barcodeDetector) return;
+                try {
+                    const barcodes = await barcodeDetector.detect(video);
+                    if (barcodes.length > 0) {
+                        isScanning = false; // Stop detection loop
+                        const foundBarcode = barcodes[0].rawValue;
+                        const parsedData = parseGS1Data(foundBarcode);
+                        
+                        playBeep();
+                        if ('vibrate' in navigator) navigator.vibrate(200);
+
+                        if ('geolocation' in navigator) {
+                            infoMessage.textContent = 'Success! Getting location...';
+                            navigator.geolocation.getCurrentPosition(
+                                (position) => {
+                                    const lat = position.coords.latitude;
+                                    const lon = position.coords.longitude;
+                                    const displayHtml = `<strong>GTIN:</strong> ${parsedData.gtin}<br>` +
+                                                      `<strong>LOT:</strong> ${parsedData.lot}<br>` +
+                                                      `<strong>Expiry:</strong> ${parsedData.expiry}<br>` +
+                                                      `<strong>Geolocation:</strong> ${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+                                    finalizeScan(displayHtml, 'Success! Camera will stop shortly.');
+                                },
+                                (error) => {
+                                    console.warn(`Geolocation error (${error.code}): ${error.message}`);
+                                    const displayHtml = `<strong>GTIN:</strong> ${parsedData.gtin}<br>` +
+                                                      `<strong>LOT:</strong> ${parsedData.lot}<br>` +
+                                                      `<strong>Expiry:</strong> ${parsedData.expiry}<br>` +
+                                                      `<strong style="color: #ffcc00;">Geolocation:</strong> Not available`;
+                                    finalizeScan(displayHtml, 'Could not get location. Camera will stop shortly.');
+                                }
+                            );
+                        } else {
+                            // Geolocation not supported by browser
+                            const displayHtml = `<strong>GTIN:</strong> ${parsedData.gtin}<br>` +
+                                              `<strong>LOT:</strong> ${parsedData.lot}<br>` +
+                                              `<strong>Expiry:</strong> ${parsedData.expiry}<br>` +
+                                              `<strong style="color: #ffcc00;">Geolocation:</strong> Not supported`;
+                            finalizeScan(displayHtml, 'Geolocation not supported. Camera will stop shortly.');
+                        }
+                    } else {
+                        requestAnimationFrame(detectBarcode);
+                    }
+                } catch (e) {
+                    console.warn("Detection error:", e.message);
+                    if (isScanning) requestAnimationFrame(detectBarcode);
+                }
+            }
+        })();
+    </script>
+
+</body>
+</html>
