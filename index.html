@@ -135,7 +135,7 @@
         <h1>GS1 Code Scanner</h1>
         
         <div class="scanner-overlay">
-            <video id="video-preview" playsinline></video>
+            <video id="video-preview" playsinline muted autoplay></video>
             <div class="scan-line"></div>
         </div>
 
@@ -165,6 +165,11 @@
             // --- Feature Detection ---
             if (!('BarcodeDetector' in window)) {
                 infoMessage.textContent = 'Sorry, your browser does not support barcode scanning.';
+                scanButton.disabled = true;
+                return;
+            }
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                infoMessage.textContent = 'Camera access is not supported by your browser.';
                 scanButton.disabled = true;
                 return;
             }
@@ -223,10 +228,18 @@
                 if (isScanning || !barcodeDetector) return;
                 try {
                     stream = await navigator.mediaDevices.getUserMedia({
-                        video: { facingMode: 'environment' },
+                        video: { 
+                            facingMode: 'environment',
+                            width: { ideal: 1280 },
+                            height: { ideal: 720 } 
+                        },
                         audio: false
                     });
                     video.srcObject = stream;
+                    
+                    // The following line is crucial for iOS
+                    video.setAttribute('playsinline', ''); 
+                    
                     await video.play();
                     video.classList.add('active');
                     scanButton.textContent = 'Stop Scan';
@@ -236,7 +249,7 @@
                     requestAnimationFrame(detectBarcode);
                 } catch (err) {
                     console.error("Camera access error:", err);
-                    infoMessage.textContent = 'Could not access camera. Please grant permission.';
+                    infoMessage.textContent = `Could not access camera. Please grant permission. Error: ${err.name}`;
                     isScanning = false;
                 }
             }
@@ -351,7 +364,10 @@
             }
 
             async function detectBarcode() {
-                if (!isScanning || !barcodeDetector) return;
+                if (!isScanning || !barcodeDetector || video.readyState < 2) {
+                    if (isScanning) requestAnimationFrame(detectBarcode);
+                    return;
+                }
                 try {
                     const barcodes = await barcodeDetector.detect(video);
                     if (barcodes.length > 0) {
