@@ -259,73 +259,53 @@
              * @returns {object} An object containing the found values.
              */
             function parseGS1Data(data) {
-                const result = {
-                    gtin: 'N/A',
-                    expiry: 'N/A',
-                    lot: 'N/A'
+                const result = { gtin: 'N/A', expiry: 'N/A', lot: 'N/A' };
+                const fnc1 = String.fromCharCode(29); // FNC1 separator
+                let remainingData = data;
+
+                // AIs and their fixed lengths. Variable length is handled as a special case.
+                const aiDefs = { 
+                    '01': { name: 'gtin', length: 14 }, 
+                    '17': { name: 'expiry', length: 6 }
                 };
 
-                // The FNC1 separator is often represented by the non-printable ASCII Group Separator character.
-                const fnc1 = String.fromCharCode(29);
+                while (remainingData.length > 2) {
+                    const ai = remainingData.substring(0, 2);
+                    let consumed = false;
 
-                // AIs to search for
-                const ais = {
-                    GTIN: '01',
-                    EXPIRY: '17',
-                    LOT: '10'
-                };
-
-                // Find GTIN (AI 01) - fixed length of 14
-                let gtinIndex = data.indexOf(ais.GTIN);
-                if (gtinIndex !== -1 && gtinIndex === 0) { // Should be at the start
-                    const gtin = data.substring(gtinIndex + ais.GTIN.length, gtinIndex + ais.GTIN.length + 14);
-                    if (gtin.length === 14) {
-                        result.gtin = gtin;
-                    }
-                }
-
-                // Find Expiry Date (AI 17) - fixed length of 6 (YYMMDD)
-                let expiryIndex = data.indexOf(ais.EXPIRY);
-                if (expiryIndex !== -1) {
-                    const dateStr = data.substring(expiryIndex + ais.EXPIRY.length, expiryIndex + ais.EXPIRY.length + 6);
-                    if (dateStr.length === 6) {
-                        const year = `20${dateStr.substring(0, 2)}`;
-                        const month = dateStr.substring(2, 4);
-                        const day = dateStr.substring(4, 6);
-                        result.expiry = `${day}/${month}/${year}`;
-                    }
-                }
-
-                // Find LOT Number (AI 10) - variable length, terminated by FNC1 or end of string
-                let lotIndex = data.indexOf(ais.LOT);
-                if (lotIndex !== -1) {
-                    let lotData = data.substring(lotIndex + ais.LOT.length);
-                    
-                    // Check for the FNC1 separator
-                    const separatorIndex = lotData.indexOf(fnc1);
-                    
-                    if (separatorIndex !== -1) {
-                        // If separator exists, LOT is the string before it
-                        result.lot = lotData.substring(0, separatorIndex);
-                    } else {
-                        // If no separator, it might be the last element. We check for other AIs.
-                        let nextAiIndex = -1;
-                        const nextGtinIndex = lotData.indexOf(ais.GTIN);
-                        const nextExpiryIndex = lotData.indexOf(ais.EXPIRY);
-                        
-                        if (nextGtinIndex > 0) nextAiIndex = nextGtinIndex;
-                        if (nextExpiryIndex > 0 && (nextAiIndex === -1 || nextExpiryIndex < nextAiIndex)) {
-                            nextAiIndex = nextExpiryIndex;
-                        }
-
-                        if (nextAiIndex !== -1) {
-                            result.lot = lotData.substring(0, nextAiIndex);
+                    if (ai === '10') { // Handle variable-length AI (10) for LOT
+                        let lotData = remainingData.substring(2);
+                        const separatorIndex = lotData.indexOf(fnc1);
+                        if (separatorIndex !== -1) {
+                            result.lot = lotData.substring(0, separatorIndex);
+                            remainingData = lotData.substring(separatorIndex + 1);
                         } else {
-                            result.lot = lotData; // Assume it's the rest of the string
+                            // If no FNC1, assume it's the last element.
+                            result.lot = lotData;
+                            remainingData = '';
                         }
+                        consumed = true;
+                    } else if (aiDefs[ai]) { // Handle fixed-length AIs
+                        const def = aiDefs[ai];
+                        const value = remainingData.substring(2, 2 + def.length);
+                        
+                        if (def.name === 'gtin') {
+                            result.gtin = value;
+                        } else if (def.name === 'expiry') {
+                            const year = `20${value.substring(0, 2)}`;
+                            const month = value.substring(2, 4);
+                            const day = value.substring(4, 6);
+                            result.expiry = `${day}/${month}/${year}`;
+                        }
+                        
+                        remainingData = remainingData.substring(2 + def.length);
+                        consumed = true;
+                    }
+
+                    if (!consumed) {
+                        break; // Unrecognized AI, stop parsing.
                     }
                 }
-
                 return result;
             }
 
