@@ -3,278 +3,290 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GS1 Barcode Scanner</title>
-    <!-- Tailwind CSS for styling -->
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>GS1 Code Scanner</title>
     <style>
-        /* Custom style for the video container to create a "viewport" effect */
-        #video-container {
-            position: relative;
+        /* Basic styles for a clean, mobile-first layout */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #121212;
+            color: #e0e0e0;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
             overflow: hidden;
-            border-radius: 0.75rem; /* rounded-xl */
         }
-        #video-container::after {
-            content: '';
+
+        /* Main container for the app content */
+        .container {
+            width: 100%;
+            max-width: 600px;
+            padding: 20px;
+            box-sizing: border-box;
+            text-align: center;
+        }
+
+        h1 {
+            color: #ffffff;
+            margin-bottom: 20px;
+        }
+
+        /* Video element for camera stream */
+        #video-preview {
+            width: 100%;
+            height: auto;
+            border-radius: 12px;
+            background-color: #333;
+            display: none; /* Hidden by default */
+            transform: scaleX(-1); /* Flips the video horizontally to feel more like a mirror, optional */
+        }
+        
+        /* Styling for the scanner overlay */
+        .scanner-overlay {
+            position: relative;
+            width: 100%;
+            padding-top: 75%; /* 4:3 Aspect Ratio */
+            margin-bottom: 20px;
+        }
+
+        #video-preview.active {
+            display: block;
             position: absolute;
-            top: 10%;
-            left: 50%;
-            width: 90%;
-            height: 1px;
-            background: rgba(255, 0, 0, 0.7);
-            transform: translateX(-50%);
-            box-shadow: 0 0 10px rgba(255, 0, 0, 1);
-            animation: scan-line 2s infinite linear;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
         }
-        @keyframes scan-line {
-            0% { top: 10%; }
-            100% { top: 90%; }
+        
+        /* Red line to guide the user */
+        .scan-line {
+            position: absolute;
+            top: 50%;
+            left: 5%;
+            right: 5%;
+            height: 2px;
+            background-color: red;
+            box-shadow: 0 0 10px red;
+            display: none; /* Hidden until scanning starts */
         }
-        /* Hide the copy button initially */
-        #copyButton {
-            display: none;
+        
+        #video-preview.active + .scan-line {
+            display: block;
         }
+
+        /* Button styling */
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            margin-top: 20px;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+        
+        button:disabled {
+            background-color: #555;
+            cursor: not-allowed;
+        }
+
+        /* Result display area */
+        #result-container {
+            margin-top: 25px;
+            padding: 15px;
+            background-color: #1e1e1e;
+            border-radius: 8px;
+            min-height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            word-break: break-all;
+        }
+        
+        #result-text {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #4CAF50; /* Green color for success */
+        }
+
+        /* Informational messages */
+        #info-message {
+            margin-top: 15px;
+            color: #aaa;
+        }
+
     </style>
 </head>
-<body class="bg-gray-100 flex flex-col items-center justify-center min-h-screen font-sans p-4">
+<body>
 
-    <div class="w-full max-w-md mx-auto bg-white rounded-xl shadow-lg p-6 space-y-4">
-        <h1 class="text-2xl font-bold text-center text-gray-800">GS1 Barcode Scanner</h1>
+    <div class="container">
+        <h1>GS1 Code Scanner</h1>
         
-        <p class="text-center text-gray-500 text-sm">
-            Press "Start Scan" and point your phone's camera at a GS1 barcode.
-        </p>
-
-        <!-- Container for the video stream -->
-        <div id="video-container" class="w-full h-64 bg-gray-900 hidden">
-            <video id="video" class="w-full h-full object-cover" playsinline></video>
+        <div class="scanner-overlay">
+            <video id="video-preview" playsinline></video>
+            <div class="scan-line"></div>
         </div>
 
-        <!-- Camera Selection Dropdown -->
-        <div id="sourceSelectPanel" class="hidden">
-            <label for="sourceSelect" class="block text-sm font-medium text-gray-700">Change Camera:</label>
-            <select id="sourceSelect" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"></select>
+        <div id="result-container">
+            <p id="result-text">Scan result will appear here</p>
         </div>
 
-        <!-- Button to control the scanner -->
-        <button id="scanButton" class="w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-300">
-            Start Scan
-        </button>
-
-        <!-- Area to display the scan results -->
-        <div id="result-container" class="pt-4">
-            <div class="flex justify-between items-center">
-                <h2 class="text-lg font-semibold text-gray-700">Scan Result:</h2>
-                <button id="copyButton" class="bg-gray-200 text-gray-600 text-xs font-semibold py-1 px-3 rounded-md hover:bg-gray-300">Copy</button>
-            </div>
-            <div id="result" class="mt-2 p-4 bg-gray-100 rounded-lg text-gray-800 break-words min-h-[50px]">
-                <span class="text-gray-400">Waiting for scan...</span>
-            </div>
-        </div>
+        <button id="scan-button">Start Scan</button>
+        
+        <p id="info-message">Click "Start Scan" to use your camera.</p>
     </div>
 
-    <footer class="text-center text-gray-400 text-xs mt-6">
-        <p>Powered by ZXing JS Library</p>
-    </footer>
-
-    <!-- ZXing Library from unpkg CDN with an error handler -->
-    <script src="https://unpkg.com/@zxing/library@0.20.0/umd/zxing.min.js"></script>
-    
     <script>
-        // This function is in the global scope, so the onerror attribute can find it.
-        function handleLibraryLoadError() {
-            console.error('Failed to load ZXing library from CDN.');
-            const resultElement = document.getElementById('result');
-            if (resultElement) {
-                resultElement.innerHTML = '<b>Fatal Error:</b> The scanning library could not be downloaded. This might be due to a network issue, ad-blocker, or firewall. Please try a different network or disable any ad-blockers.';
+        // Immediately-invoked function expression (IIFE) to encapsulate the scanner logic
+        (function() {
+            // DOM element references
+            const video = document.getElementById('video-preview');
+            const scanButton = document.getElementById('scan-button');
+            const resultText = document.getElementById('result-text');
+            const infoMessage = document.getElementById('info-message');
+
+            let stream = null; // To hold the camera stream
+            let barcodeDetector = null;
+            let isScanning = false;
+
+            // --- Feature Detection ---
+            // Check if the Barcode Detection API is supported by the browser
+            if (!('BarcodeDetector' in window)) {
+                infoMessage.textContent = 'Sorry, your browser does not support barcode scanning.';
+                scanButton.disabled = true;
+                return; // Exit if not supported
             }
-        }
 
-        // Add the error handler to the script tag dynamically.
-        // This is a more robust way to handle script loading errors.
-        const zxingScript = document.querySelector('script[src*="zxing"]');
-        if (zxingScript) {
-            zxingScript.onerror = handleLibraryLoadError;
-        }
-
-        // Use window.addEventListener('load', ...) to ensure the entire page,
-        // including the ZXing library, is fully loaded before the script runs.
-        window.addEventListener('load', () => {
-            // Get references to the HTML elements
-            const videoElement = document.getElementById('video');
-            const videoContainer = document.getElementById('video-container');
-            const scanButton = document.getElementById('scanButton');
-            const resultElement = document.getElementById('result');
-            const sourceSelect = document.getElementById('sourceSelect');
-            const sourceSelectPanel = document.getElementById('sourceSelectPanel');
-            const copyButton = document.getElementById('copyButton');
-            
-            // Check if the ZXing library is loaded.
-            if (typeof ZXing === 'undefined') {
-                // The onerror handler should catch this, but this is a fallback.
-                if (!resultElement.innerHTML.includes('Fatal Error')) {
-                   handleLibraryLoadError(); // Call the global error handler
-                }
+            // --- Barcode Detector Initialization ---
+            try {
+                // Initialize the detector. You can specify multiple formats.
+                // GS1 data is often encoded in these formats.
+                barcodeDetector = new BarcodeDetector({
+                    formats: [
+                        'ean_13',
+                        'ean_8',
+                        'upc_a',
+                        'upc_e',
+                        'code_128',
+                        'qr_code' // Also scan QR codes which might contain GS1 data
+                    ]
+                });
+            } catch (e) {
+                infoMessage.textContent = 'Could not initialize barcode detector. ' + e.message;
+                scanButton.disabled = true;
                 return;
             }
 
-            // Access the ZXing classes from the global ZXing object
-            const { BrowserMultiFormatReader, NotFoundException, DecodeHintType } = ZXing;
-
-            // Initialize the barcode reader
-            const hints = new Map();
-            const formats = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048]; // Corresponds to all barcode formats
-            hints.set(DecodeHintType.POSSIBLE_FORMATS, formats);
-            const codeReader = new BrowserMultiFormatReader(hints);
-            
-            let selectedDeviceId;
-            let isScanning = false;
-            let controls = null;
-
-            /**
-             * Populates the camera selection dropdown.
-             */
-            async function setupCameraSelection() {
-                try {
-                    const videoInputDevices = await codeReader.listVideoInputDevices();
-                    sourceSelectPanel.classList.remove('hidden');
-
-                    if (videoInputDevices.length === 0) {
-                        resultElement.textContent = 'Error: No camera found on this device.';
-                        sourceSelectPanel.classList.add('hidden');
-                        return;
-                    }
-
-                    // Prefer the rear camera by default
-                    const rearCamera = videoInputDevices.find(device => device.label.toLowerCase().includes('back') || device.label.toLowerCase().includes('environment'));
-                    selectedDeviceId = rearCamera ? rearCamera.deviceId : videoInputDevices[0].deviceId;
-
-                    // Populate the dropdown
-                    videoInputDevices.forEach(device => {
-                        const option = document.createElement('option');
-                        option.value = device.deviceId;
-                        option.textContent = device.label || `Camera ${sourceSelect.length + 1}`;
-                        if (device.deviceId === selectedDeviceId) {
-                            option.selected = true;
-                        }
-                        sourceSelect.appendChild(option);
-                    });
-
-                } catch (error) {
-                     resultElement.innerHTML = `<b>Error:</b> Could not list cameras. ${error.name}`;
+            // --- Event Listener for the Scan Button ---
+            scanButton.addEventListener('click', async () => {
+                if (isScanning) {
+                    stopScan();
+                } else {
+                    await startScan();
                 }
-            }
+            });
+
+            // --- Core Functions ---
 
             /**
-             * Function to start the scanning process.
+             * Starts the camera and the scanning process.
              */
             async function startScan() {
-                if (isScanning) return;
-
-                if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
-                    resultElement.innerHTML = '<b>Error:</b> Camera access requires a secure connection (HTTPS).';
-                    return;
-                }
+                // Prevent starting a new scan if one is already active
+                if (isScanning || !barcodeDetector) return;
 
                 try {
-                    isScanning = true;
-                    scanButton.textContent = 'Stop Scan';
-                    resultElement.innerHTML = '<span class="text-gray-400">Starting camera...</span>';
-                    videoContainer.classList.remove('hidden');
-                    copyButton.style.display = 'none';
-
-                    controls = await codeReader.decodeFromVideoDevice(selectedDeviceId, 'video', (result, err) => {
-                        if (result) {
-                            resultElement.textContent = result.getText();
-                            const audio = new Audio('data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU'+Array(30).join('123'));
-                            audio.play();
-                            copyButton.style.display = 'block';
-                            stopScan();
-                        }
-                        if (err && !(err instanceof NotFoundException)) {
-                            console.error('Scan error:', err);
-                            resultElement.textContent = `Error: ${err.message}`;
-                            stopScan();
-                        }
+                    // Request access to the user's camera.
+                    // 'environment' prefers the rear camera, which is what we want.
+                    stream = await navigator.mediaDevices.getUserMedia({
+                        video: {
+                            facingMode: 'environment'
+                        },
+                        audio: false
                     });
 
-                } catch (error) {
-                    console.error('Initialization error:', error);
-                    let errorMessage = `Error: Could not start camera.`;
-                    if (error.name === 'NotAllowedError') {
-                        errorMessage = '<b>Error: Camera permission denied.</b> Please enable it in browser settings and refresh.';
-                    } else if (error.name === 'NotReadableError' || error.name === 'TrackStartError') {
-                         errorMessage = '<b>Error: Camera is already in use.</b> Close other apps using the camera.';
-                    } else {
-                        errorMessage = `<b>Error:</b> An unexpected issue occurred (${error.name}).`;
-                    }
-                    resultElement.innerHTML = errorMessage;
-                    stopScan(); // Reset UI on error
+                    video.srcObject = stream;
+                    await video.play();
+                    
+                    // Update UI for scanning state
+                    video.classList.add('active');
+                    scanButton.textContent = 'Stop Scan';
+                    resultText.textContent = 'Point camera at a barcode...';
+                    infoMessage.textContent = 'Scanning...';
+                    isScanning = true;
+
+                    // Start the detection loop
+                    requestAnimationFrame(detectBarcode);
+
+                } catch (err) {
+                    console.error("Camera access error:", err);
+                    infoMessage.textContent = 'Could not access the camera. Please grant permission and try again.';
+                    isScanning = false;
                 }
             }
 
             /**
-             * Function to stop the scanning process and release the camera.
+             * Stops the camera stream and scanning process.
              */
             function stopScan() {
-                if (!isScanning) return;
-                
-                if (controls) {
-                    controls.stop();
-                    controls = null;
+                if (stream) {
+                    stream.getTracks().forEach(track => track.stop());
                 }
-                codeReader.reset();
-                videoContainer.classList.add('hidden');
+                video.srcObject = null;
+                video.classList.remove('active');
                 scanButton.textContent = 'Start Scan';
+                infoMessage.textContent = 'Scan stopped. Click to start again.';
                 isScanning = false;
             }
 
-            // Event listener for the main button
-            scanButton.addEventListener('click', () => {
-                if (isScanning) {
-                    stopScan();
-                } else {
-                    startScan();
-                }
-            });
+            /**
+             * Continuously detects barcodes from the video stream.
+             */
+            async function detectBarcode() {
+                // Only run detection if scanning is active and the detector is ready
+                if (!isScanning || !barcodeDetector) return;
 
-            // Event listener for the camera selection dropdown
-            sourceSelect.addEventListener('change', () => {
-                selectedDeviceId = sourceSelect.value;
-                if (isScanning) {
-                    stopScan();
-                    startScan(); // Restart scan with the new camera
-                }
-            });
+                try {
+                    // Detect barcodes in the current video frame
+                    const barcodes = await barcodeDetector.detect(video);
 
-            // Event listener for the copy button
-            copyButton.addEventListener('click', () => {
-                const textToCopy = resultElement.textContent;
-                if (navigator.clipboard && window.isSecureContext) {
-                    navigator.clipboard.writeText(textToCopy).then(() => {
-                        copyButton.textContent = 'Copied!';
-                        setTimeout(() => { copyButton.textContent = 'Copy'; }, 2000);
-                    });
-                } else {
-                    // Fallback for older browsers or insecure contexts
-                    const textArea = document.createElement('textarea');
-                    textArea.value = textToCopy;
-                    document.body.appendChild(textArea);
-                    textArea.focus();
-                    textArea.select();
-                    try {
-                        document.execCommand('copy');
-                        copyButton.textContent = 'Copied!';
-                        setTimeout(() => { copyButton.textContent = 'Copy'; }, 2000);
-                    } catch (err) {
-                        console.error('Fallback copy failed', err);
+                    if (barcodes.length > 0) {
+                        // A barcode was found!
+                        const foundBarcode = barcodes[0].rawValue;
+                        resultText.textContent = foundBarcode;
+                        
+                        // Vibrate to give feedback (if supported)
+                        if ('vibrate' in navigator) {
+                            navigator.vibrate(200); // Vibrate for 200ms
+                        }
+                        
+                        // Stop scanning after a successful detection
+                        stopScan();
+                        
+                    } else {
+                        // No barcode found, continue the loop
+                        requestAnimationFrame(detectBarcode);
                     }
-                    document.body.removeChild(textArea);
+                } catch (e) {
+                    // This can happen if the video is not ready yet.
+                    // We just continue the loop.
+                    console.warn("Detection error:", e.message);
+                    if (isScanning) {
+                       requestAnimationFrame(detectBarcode);
+                    }
                 }
-            });
-
-            // Initialize camera selection when the page loads
-            setupCameraSelection();
-        });
+            }
+        })();
     </script>
 
 </body>
