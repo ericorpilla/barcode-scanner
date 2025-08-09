@@ -16,8 +16,8 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            height: 100vh;
-            overflow: hidden;
+            min-height: 100vh;
+            overflow-x: hidden;
         }
 
         /* Main container for the app content */
@@ -106,7 +106,7 @@
             padding: 15px;
             background-color: #1e1e1e;
             border-radius: 8px;
-            min-height: 80px; /* Increased height for more data */
+            min-height: 120px; /* Increased height for more data */
             display: flex;
             align-items: center;
             justify-content: center;
@@ -231,7 +231,7 @@
                     await video.play();
                     video.classList.add('active');
                     scanButton.textContent = 'Stop Scan';
-                    resultText.textContent = 'Point camera at a barcode...';
+                    resultText.innerHTML = 'Point camera at a barcode...';
                     infoMessage.textContent = 'Scanning...';
                     isScanning = true;
                     requestAnimationFrame(detectBarcode);
@@ -252,6 +252,73 @@
                 infoMessage.textContent = 'Scan stopped. Click to start again.';
                 isScanning = false;
             }
+            
+            /**
+             * Parses a raw GS1 data string to find specific Application Identifiers (AIs).
+             * @param {string} data The raw string from the barcode.
+             * @returns {object} An object containing the found values.
+             */
+            function parseGS1Data(data) {
+                const result = {
+                    gtin: 'N/A',
+                    expiry: 'N/A',
+                    lot: 'N/A'
+                };
+                
+                // AIs to search for
+                const ais = {
+                    GTIN: '01',
+                    EXPIRY: '17',
+                    LOT: '10'
+                };
+
+                // Find GTIN (AI 01) - fixed length of 14
+                let gtinIndex = data.indexOf(ais.GTIN);
+                if (gtinIndex !== -1) {
+                    const gtin = data.substring(gtinIndex + ais.GTIN.length, gtinIndex + ais.GTIN.length + 14);
+                    if (gtin.length === 14) {
+                        result.gtin = gtin;
+                    }
+                }
+
+                // Find Expiry Date (AI 17) - fixed length of 6 (YYMMDD)
+                let expiryIndex = data.indexOf(ais.EXPIRY);
+                if (expiryIndex !== -1) {
+                    const dateStr = data.substring(expiryIndex + ais.EXPIRY.length, expiryIndex + ais.EXPIRY.length + 6);
+                    if (dateStr.length === 6) {
+                        const year = `20${dateStr.substring(0, 2)}`;
+                        const month = dateStr.substring(2, 4);
+                        const day = dateStr.substring(4, 6);
+                        result.expiry = `${day}/${month}/${year}`;
+                    }
+                }
+
+                // Find LOT Number (AI 10) - variable length
+                let lotIndex = data.indexOf(ais.LOT);
+                if (lotIndex !== -1) {
+                    let lotData = data.substring(lotIndex + ais.LOT.length);
+                    // Find the start of the next AI to determine the end of the LOT number
+                    let nextAiIndex = -1;
+                    const nextGtinIndex = lotData.indexOf(ais.GTIN);
+                    const nextExpiryIndex = lotData.indexOf(ais.EXPIRY);
+
+                    if (nextGtinIndex > 0 && nextExpiryIndex > 0) {
+                        nextAiIndex = Math.min(nextGtinIndex, nextExpiryIndex);
+                    } else if (nextGtinIndex > 0) {
+                        nextAiIndex = nextGtinIndex;
+                    } else if (nextExpiryIndex > 0) {
+                        nextAiIndex = nextExpiryIndex;
+                    }
+                    
+                    if (nextAiIndex !== -1) {
+                        result.lot = lotData.substring(0, nextAiIndex);
+                    } else {
+                        result.lot = lotData; // Assume it's the rest of the string
+                    }
+                }
+
+                return result;
+            }
 
             /**
              * Handles the final display and stops the scan after a delay.
@@ -259,7 +326,7 @@
             function finalizeScan(displayHtml, message) {
                  resultText.innerHTML = displayHtml;
                  infoMessage.textContent = message;
-                 setTimeout(() => stopScan(), 2500); // Increased delay to read info
+                 setTimeout(() => stopScan(), 3000); // Increased delay to read info
             }
 
             async function detectBarcode() {
@@ -269,6 +336,7 @@
                     if (barcodes.length > 0) {
                         isScanning = false; // Stop detection loop
                         const foundBarcode = barcodes[0].rawValue;
+                        const parsedData = parseGS1Data(foundBarcode);
                         
                         playBeep();
                         if ('vibrate' in navigator) navigator.vibrate(200);
@@ -279,18 +347,27 @@
                                 (position) => {
                                     const lat = position.coords.latitude;
                                     const lon = position.coords.longitude;
-                                    const displayHtml = `<strong>GS1 Code:</strong> ${foundBarcode}<br><strong>Latitude:</strong> ${lat.toFixed(6)}<br><strong>Longitude:</strong> ${lon.toFixed(6)}`;
+                                    const displayHtml = `<strong>GTIN:</strong> ${parsedData.gtin}<br>` +
+                                                      `<strong>LOT:</strong> ${parsedData.lot}<br>` +
+                                                      `<strong>Expiry:</strong> ${parsedData.expiry}<br>` +
+                                                      `<strong>Geolocation:</strong> ${lat.toFixed(6)}, ${lon.toFixed(6)}`;
                                     finalizeScan(displayHtml, 'Success! Camera will stop shortly.');
                                 },
                                 (error) => {
                                     console.warn(`Geolocation error (${error.code}): ${error.message}`);
-                                    const displayHtml = `<strong>GS1 Code:</strong> ${foundBarcode}<br><strong style="color: #ffcc00;">Location:</strong> Not available`;
+                                    const displayHtml = `<strong>GTIN:</strong> ${parsedData.gtin}<br>` +
+                                                      `<strong>LOT:</strong> ${parsedData.lot}<br>` +
+                                                      `<strong>Expiry:</strong> ${parsedData.expiry}<br>` +
+                                                      `<strong style="color: #ffcc00;">Geolocation:</strong> Not available`;
                                     finalizeScan(displayHtml, 'Could not get location. Camera will stop shortly.');
                                 }
                             );
                         } else {
                             // Geolocation not supported by browser
-                            const displayHtml = `<strong>GS1 Code:</strong> ${foundBarcode}<br><strong style="color: #ffcc00;">Location:</strong> Not supported`;
+                            const displayHtml = `<strong>GTIN:</strong> ${parsedData.gtin}<br>` +
+                                              `<strong>LOT:</strong> ${parsedData.lot}<br>` +
+                                              `<strong>Expiry:</strong> ${parsedData.expiry}<br>` +
+                                              `<strong style="color: #ffcc00;">Geolocation:</strong> Not supported`;
                             finalizeScan(displayHtml, 'Geolocation not supported. Camera will stop shortly.');
                         }
                     } else {
