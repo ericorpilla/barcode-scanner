@@ -80,9 +80,9 @@
     <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.20.0/umd/zxing.min.js"></script>
     
     <script>
-        // Wait for the DOM to be fully loaded before running the script
-        document.addEventListener('DOMContentLoaded', () => {
-
+        // This script runs after the ZXing library has been loaded.
+        // We wrap the logic in a function and call it to avoid polluting the global scope.
+        (function() {
             // Get references to the HTML elements
             const videoElement = document.getElementById('video');
             const videoContainer = document.getElementById('video-container');
@@ -92,7 +92,14 @@
             const sourceSelectPanel = document.getElementById('sourceSelectPanel');
             const copyButton = document.getElementById('copyButton');
             
-            // Access the ZXing classes from the global ZXing object provided by the UMD script
+            // Check if the ZXing library is loaded. If not, display an error.
+            if (typeof ZXing === 'undefined') {
+                console.error('ZXing library not loaded.');
+                resultElement.innerHTML = '<b>Error:</b> Could not load the scanning library. Please check your internet connection and refresh.';
+                return;
+            }
+
+            // Access the ZXing classes from the global ZXing object
             const { BrowserMultiFormatReader, NotFoundException, DecodeHintType } = ZXing;
 
             // Initialize the barcode reader
@@ -249,7 +256,7 @@
 
             // Initialize camera selection when the page loads
             setupCameraSelection();
-        });
+        })();
     </script>
 
 </body>
