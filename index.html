@@ -331,7 +331,7 @@
             async function detectBarcode() {
                 if (!isScanning || !barcodeDetector) return;
                 try {
-                    const barcodes = await detector.detect(video);
+                    const barcodes = await barcodeDetector.detect(video);
                     if (barcodes.length > 0) {
                         isScanning = false; // Stop detection loop
                         const foundBarcode = barcodes[0].rawValue;
