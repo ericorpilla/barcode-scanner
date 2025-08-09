@@ -264,16 +264,20 @@
 
                     if (barcodes.length > 0) {
                         // A barcode was found!
+                        isScanning = false; // Stop the detection loop immediately
                         const foundBarcode = barcodes[0].rawValue;
                         resultText.textContent = foundBarcode;
+                        infoMessage.textContent = 'Success! Camera will stop shortly.';
                         
                         // Vibrate to give feedback (if supported)
                         if ('vibrate' in navigator) {
                             navigator.vibrate(200); // Vibrate for 200ms
                         }
                         
-                        // Stop scanning after a successful detection
-                        stopScan();
+                        // Stop scanning after a successful detection with a delay
+                        setTimeout(() => {
+                            stopScan();
+                        }, 1500); // Wait 1.5 seconds before stopping the camera
                         
                     } else {
                         // No barcode found, continue the loop
