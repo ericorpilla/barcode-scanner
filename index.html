@@ -171,26 +171,22 @@
                     return;
                 }
                 
-                // --- Create hints for the reader to improve performance ---
+                // --- Create CLEANED UP hints for the reader ---
                 const hints = new Map();
-                // Specify the barcode formats to look for
+                // Specify only the most relevant barcode formats
                 const formats = [
                     ZXing.BarcodeFormat.CODE_128,
                     ZXing.BarcodeFormat.EAN_13,
-                    ZXing.BarcodeFormat.EAN_8,
-                    ZXing.BarcodeFormat.UPC_A,
-                    ZXing.BarcodeFormat.UPC_E,
+                    ZXing.BarcodeFormat.DATA_MATRIX,
                     ZXing.BarcodeFormat.QR_CODE,
-                    ZXing.BarcodeFormat.DATA_MATRIX
                 ];
                 hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, formats);
-                // Tell the library to spend more effort decoding
-                hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+                
                 // *** THIS IS THE KEY FIX FOR GS1 ***
                 // Tell the library to assume the barcode is a GS1 type
                 hints.set(ZXing.DecodeHintType.ASSUME_GS1, true);
 
-                // Initialize the ZXing code reader with the hints
+                // Initialize the ZXing code reader with the more focused hints
                 codeReader = new ZXing.BrowserMultiFormatReader(hints);
                 
                 // Enable the button now that the library is ready
@@ -263,7 +259,6 @@
                         if (err && !(err instanceof ZXing.NotFoundException)) {
                             // An error other than "not found" occurred
                             console.error('ZXing detection error:', err);
-                            // We don't show this error to the user as it can be noisy
                         }
                     });
                 } catch (err) {
@@ -323,36 +318,33 @@
             function finalizeScan(displayHtml, message) {
                  resultText.innerHTML = displayHtml;
                  infoMessage.textContent = message;
-                 // No need to stop scan here, as codeReader.reset() already did.
             }
 
             function parseGS1Data(data) {
-                // This function remains the same as it's for parsing the data string
                 const result = { gtin: 'N/A', expiry: 'N/A', lot: 'N/A' };
-                const fnc1 = String.fromCharCode(29); // FNC1 separator
+                // The FNC1 character is often represented as ASCII character 29
+                const fnc1 = String.fromCharCode(29); 
+                const dataWithSeparators = data.replace(/\x1d/g, fnc1); // Ensure all FNC1 codes are consistent
+
                 const aiDefs = {
                     '01': { length: 14, name: 'gtin' },
                     '17': { length: 6, name: 'expiry' },
                     '10': { length: null, name: 'lot' }
                 };
-                let startIndex = -1;
-                for (const ai in aiDefs) {
-                    const pos = data.indexOf(ai);
-                    if (pos === 0 || (pos > 0 && data[pos-1] === fnc1)) {
-                         if (startIndex === -1 || pos < startIndex) {
-                            startIndex = pos;
-                        }
-                    }
+
+                let remainingData = dataWithSeparators;
+                
+                // GS1-128 barcodes start with a special FNC1 character. 
+                // We find the first real Application Identifier (AI) to start parsing.
+                if (remainingData.startsWith(fnc1)) {
+                    remainingData = remainingData.substring(1);
                 }
-                if (startIndex === -1) {
-                    // Fallback for codes that might not start with an AI
-                    startIndex = data.indexOf('01') !== -1 ? data.indexOf('01') : 0;
-                }
-                let remainingData = data.substring(startIndex);
+
                 while (remainingData.length > 0) {
                     const currentAi = remainingData.substring(0, 2);
                     let consumed = false;
-                    if (aiDefs[currentAi] && aiDefs[currentAi].length !== null) {
+
+                    if (aiDefs[currentAi] && aiDefs[currentAi].length !== null) { // Fixed-length AI
                         const def = aiDefs[currentAi];
                         const dataLength = def.length;
                         if (remainingData.length >= 2 + dataLength) {
@@ -368,28 +360,24 @@
                             remainingData = remainingData.substring(2 + dataLength);
                             consumed = true;
                         }
-                    } else if (currentAi === '10') {
+                    } else if (currentAi === '10') { // Variable-length LOT AI
                         let lotData = remainingData.substring(2);
                         let separatorIndex = lotData.indexOf(fnc1);
-                        if (separatorIndex === -1) {
-                            for (const nextAi in aiDefs) {
-                                let nextPos = lotData.indexOf(nextAi);
-                                if (nextPos > 0 && (separatorIndex === -1 || nextPos < separatorIndex)) {
-                                    separatorIndex = nextPos;
-                                }
-                            }
-                        }
+
                         if (separatorIndex !== -1) {
                             result.lot = lotData.substring(0, separatorIndex);
-                            remainingData = lotData.substring(separatorIndex);
+                            remainingData = lotData.substring(separatorIndex + 1); // Skip the separator
                         } else {
+                            // If no separator, the rest of the string is the LOT
                             result.lot = lotData;
                             remainingData = "";
                         }
                         consumed = true;
                     }
+
                     if (!consumed) {
-                        break;
+                        // If we hit an AI we don't know, or data is malformed, stop.
+                        break; 
                     }
                 }
                 return result;
