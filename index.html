@@ -77,16 +77,23 @@
     </footer>
 
     <!-- ZXing Library from unpkg CDN with an error handler -->
-    <script src="https://unpkg.com/@zxing/library@0.20.0/umd/zxing.min.js" onerror="handleLibraryLoadError()"></script>
+    <script src="https://unpkg.com/@zxing/library@0.20.0/umd/zxing.min.js"></script>
     
     <script>
-        // This function is called if the script tag above fails to load.
+        // This function is in the global scope, so the onerror attribute can find it.
         function handleLibraryLoadError() {
             console.error('Failed to load ZXing library from CDN.');
             const resultElement = document.getElementById('result');
             if (resultElement) {
                 resultElement.innerHTML = '<b>Fatal Error:</b> The scanning library could not be downloaded. This might be due to a network issue, ad-blocker, or firewall. Please try a different network or disable any ad-blockers.';
             }
+        }
+
+        // Add the error handler to the script tag dynamically.
+        // This is a more robust way to handle script loading errors.
+        const zxingScript = document.querySelector('script[src*="zxing"]');
+        if (zxingScript) {
+            zxingScript.onerror = handleLibraryLoadError;
         }
 
         // Use window.addEventListener('load', ...) to ensure the entire page,
@@ -104,9 +111,8 @@
             // Check if the ZXing library is loaded.
             if (typeof ZXing === 'undefined') {
                 // The onerror handler should catch this, but this is a fallback.
-                console.error('ZXing library not loaded by the time window.load fired.');
                 if (!resultElement.innerHTML.includes('Fatal Error')) {
-                   resultElement.innerHTML = '<b>Error:</b> Could not initialize the scanning library. Please refresh the page.';
+                   handleLibraryLoadError(); // Call the global error handler
                 }
                 return;
             }
