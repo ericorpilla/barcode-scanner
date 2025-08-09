@@ -170,7 +170,7 @@
             // --- Barcode Detector Initialization ---
             try {
                 // Initialize the detector. You can specify multiple formats.
-                // GS1 data is often encoded in these formats.
+                // GS1 data is often encoded in these formats, including 2D formats.
                 barcodeDetector = new BarcodeDetector({
                     formats: [
                         'ean_13',
@@ -178,7 +178,9 @@
                         'upc_a',
                         'upc_e',
                         'code_128',
-                        'qr_code' // Also scan QR codes which might contain GS1 data
+                        'qr_code',
+                        'data_matrix', // Added for 2D GS1 DataMatrix
+                        'pdf417'       // Added for other 2D GS1 barcodes
                     ]
                 });
             } catch (e) {
