@@ -16,8 +16,8 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            height: 100vh;
-            overflow: hidden;
+            min-height: 100vh;
+            overflow-x: hidden;
         }
 
         /* Main container for the app content */
@@ -127,8 +127,20 @@
             margin-top: 15px;
             color: #aaa;
         }
+        
+        /* Google Map container */
+        #map {
+            display: none; /* Hidden by default */
+            width: 100%;
+            height: 250px;
+            margin-top: 20px;
+            border-radius: 8px;
+            background-color: #333; /* Placeholder background */
+        }
 
     </style>
+    <!-- IMPORTANT: Replace YOUR_API_KEY with your actual Google Maps API key -->
+    <script src="https://maps.googleapis.com/maps/api/js?key=YOUR_API_KEY" defer></script>
 </head>
 <body>
 
@@ -143,6 +155,8 @@
         <div id="result-container">
             <div id="result-text">Scan result will appear here</div>
         </div>
+        
+        <div id="map"></div>
 
         <button id="scan-button">Start Scan</button>
         
@@ -157,6 +171,7 @@
             const scanButton = document.getElementById('scan-button');
             const resultText = document.getElementById('result-text');
             const infoMessage = document.getElementById('info-message');
+            const mapContainer = document.getElementById('map');
 
             let stream = null; // To hold the camera stream
             let barcodeDetector = null;
@@ -223,6 +238,9 @@
             async function startScan() {
                 if (isScanning || !barcodeDetector) return;
                 try {
+                    // Hide the map when a new scan starts
+                    mapContainer.style.display = 'none';
+
                     stream = await navigator.mediaDevices.getUserMedia({
                         video: { facingMode: 'environment' },
                         audio: false
@@ -231,7 +249,7 @@
                     await video.play();
                     video.classList.add('active');
                     scanButton.textContent = 'Stop Scan';
-                    resultText.textContent = 'Point camera at a barcode...';
+                    resultText.innerHTML = 'Point camera at a barcode...';
                     infoMessage.textContent = 'Scanning...';
                     isScanning = true;
                     requestAnimationFrame(detectBarcode);
@@ -254,12 +272,37 @@
             }
 
             /**
+             * Initializes and displays the Google Map.
+             */
+            function displayMap(lat, lon) {
+                // Check if the Google Maps script has loaded
+                if (typeof google === 'undefined' || typeof google.maps === 'undefined') {
+                    console.error("Google Maps script not loaded yet.");
+                    return;
+                }
+                
+                const location = { lat: lat, lng: lon };
+                mapContainer.style.display = 'block';
+                
+                const map = new google.maps.Map(mapContainer, {
+                    zoom: 15,
+                    center: location,
+                    disableDefaultUI: true // Hides default map controls for a cleaner look
+                });
+
+                new google.maps.Marker({
+                    position: location,
+                    map: map,
+                });
+            }
+
+            /**
              * Handles the final display and stops the scan after a delay.
              */
             function finalizeScan(displayHtml, message) {
                  resultText.innerHTML = displayHtml;
                  infoMessage.textContent = message;
-                 setTimeout(() => stopScan(), 2500); // Increased delay to read info
+                 setTimeout(() => stopScan(), 3000); // Increased delay to read info and see map
             }
 
             async function detectBarcode() {
@@ -280,6 +323,10 @@
                                     const lat = position.coords.latitude;
                                     const lon = position.coords.longitude;
                                     const displayHtml = `<strong>GS1 Code:</strong> ${foundBarcode}<br><strong>Latitude:</strong> ${lat.toFixed(6)}<br><strong>Longitude:</strong> ${lon.toFixed(6)}`;
+                                    
+                                    // Display the map with the location
+                                    displayMap(lat, lon);
+                                    
                                     finalizeScan(displayHtml, 'Success! Camera will stop shortly.');
                                 },
                                 (error) => {
