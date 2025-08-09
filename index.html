@@ -159,10 +159,46 @@
 
             let isScanning = false;
             let audioContext; // To hold the AudioContext for the beep sound
+            let codeReader; // Will be initialized after library loads
+
+            // --- Wait for the ZXing library to be ready ---
+            window.addEventListener('load', () => {
+                // Check if ZXing is loaded
+                if (typeof ZXing === 'undefined') {
+                    infoMessage.textContent = 'Error: Scanning library failed to load.';
+                    scanButton.disabled = true;
+                    console.error("ZXing library not loaded.");
+                    return;
+                }
+                
+                // --- Create hints for the reader to improve performance ---
+                const hints = new Map();
+                // Specify the barcode formats to look for
+                const formats = [
+                    ZXing.BarcodeFormat.CODE_128,
+                    ZXing.BarcodeFormat.EAN_13,
+                    ZXing.BarcodeFormat.EAN_8,
+                    ZXing.BarcodeFormat.UPC_A,
+                    ZXing.BarcodeFormat.UPC_E,
+                    ZXing.BarcodeFormat.QR_CODE,
+                    ZXing.BarcodeFormat.DATA_MATRIX
+                ];
+                hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, formats);
+                // Tell the library to spend more effort decoding
+                hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+
+                // Initialize the ZXing code reader with the hints
+                codeReader = new ZXing.BrowserMultiFormatReader(hints);
+                
+                // Enable the button now that the library is ready
+                scanButton.disabled = false;
+                infoMessage.textContent = 'Ready to scan. Click "Start Scan".';
+            });
             
-            // Initialize the ZXing code reader
-            const codeReader = new ZXing.BrowserMultiFormatReader();
-            let selectedDeviceId;
+            // Disable button by default until library is loaded
+            scanButton.disabled = true;
+            infoMessage.textContent = 'Loading scanning library...';
+
 
             // --- Audio Beep Function ---
             function playBeep() {
@@ -182,6 +218,10 @@
 
             // --- Event Listener for the Scan Button ---
             scanButton.addEventListener('click', () => {
+                if (!codeReader) {
+                    infoMessage.textContent = 'Scanning library is not ready.';
+                    return;
+                }
                 // Initialize AudioContext on user interaction
                 if (!audioContext) {
                     try {
@@ -220,8 +260,9 @@
                         if (err && !(err instanceof ZXing.NotFoundException)) {
                             // An error other than "not found" occurred
                             console.error('ZXing detection error:', err);
-                            infoMessage.textContent = `Error: ${err.message}`;
-                            stopScan();
+                            // We don't show this error to the user as it can be noisy
+                            // infoMessage.textContent = `Error: ${err.message}`;
+                            // stopScan();
                         }
                     });
                 } catch (err) {
@@ -270,7 +311,9 @@
 
             function stopScan() {
                 isScanning = false;
-                codeReader.reset(); // This stops the camera and scanning process
+                if (codeReader) {
+                    codeReader.reset(); // This stops the camera and scanning process
+                }
                 video.classList.remove('active');
                 scanButton.textContent = 'Start Scan';
                 infoMessage.textContent = 'Scan stopped. Click to start again.';
