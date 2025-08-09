@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GS1 Code Scanner</title>
+    <style>
+        /* Basic styles for a clean, mobile-first layout */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #121212;
+            color: #e0e0e0;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Main container for the app content */
+        .container {
+            width: 100%;
+            max-width: 600px;
+            padding: 20px;
+            box-sizing: border-box;
+            text-align: center;
+        }
+
+        h1 {
+            color: #ffffff;
+            margin-bottom: 20px;
+        }
+
+        /* Video element for camera stream */
+        #video-preview {
+            width: 100%;
+            height: auto;
+            border-radius: 12px;
+            background-color: #333;
+            display: none; /* Hidden by default */
+            transform: scaleX(-1); /* Flips the video horizontally to feel more like a mirror, optional */
+        }
+        
+        /* Styling for the scanner overlay */
+        .scanner-overlay {
+            position: relative;
+            width: 100%;
+            padding-top: 75%; /* 4:3 Aspect Ratio */
+            margin-bottom: 20px;
+        }
+
+        #video-preview.active {
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        /* Red line to guide the user */
+        .scan-line {
+            position: absolute;
+            top: 50%;
+            left: 5%;
+            right: 5%;
+            height: 2px;
+            background-color: red;
+            box-shadow: 0 0 10px red;
+            display: none; /* Hidden until scanning starts */
+        }
+        
+        #video-preview.active + .scan-line {
+            display: block;
+        }
+
+        /* Button styling */
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            margin-top: 20px;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+        
+        button:disabled {
+            background-color: #555;
+            cursor: not-allowed;
+        }
+
+        /* Result display area */
+        #result-container {
+            margin-top: 25px;
+            padding: 15px;
+            background-color: #1e1e1e;
+            border-radius: 8px;
+            min-height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            word-break: break-all;
+        }
+        
+        #result-text {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #4CAF50; /* Green color for success */
+        }
+
+        /* Informational messages */
+        #info-message {
+            margin-top: 15px;
+            color: #aaa;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>GS1 Code Scanner</h1>
+        
+        <div class="scanner-overlay">
+            <video id="video-preview" playsinline></video>
+            <div class="scan-line"></div>
+        </div>
+
+        <div id="result-container">
+            <p id="result-text">Scan result will appear here</p>
+        </div>
+
+        <button id="scan-button">Start Scan</button>
+        
+        <p id="info-message">Click "Start Scan" to use your camera.</p>
+    </div>
+
+    <script>
+        // Immediately-invoked function expression (IIFE) to encapsulate the scanner logic
+        (function() {
+            // DOM element references
+            const video = document.getElementById('video-preview');
+            const scanButton = document.getElementById('scan-button');
+            const resultText = document.getElementById('result-text');
+            const infoMessage = document.getElementById('info-message');
+
+            let stream = null; // To hold the camera stream
+            let barcodeDetector = null;
+            let isScanning = false;
+            let audioContext; // To hold the AudioContext for the beep sound
+
+            // --- Feature Detection ---
+            // Check if the Barcode Detection API is supported by the browser
+            if (!('BarcodeDetector' in window)) {
+                infoMessage.textContent = 'Sorry, your browser does not support barcode scanning.';
+                scanButton.disabled = true;
+                return; // Exit if not supported
+            }
+
+            // --- Barcode Detector Initialization ---
+            try {
+                // Initialize the detector. You can specify multiple formats.
+                // GS1 data is often encoded in these formats, including 2D formats.
+                barcodeDetector = new BarcodeDetector({
+                    formats: [
+                        'ean_13',
+                        'ean_8',
+                        'upc_a',
+                        'upc_e',
+                        'code_128',
+                        'qr_code',
+                        'data_matrix', // Added for 2D GS1 DataMatrix
+                        'pdf417'       // Added for other 2D GS1 barcodes
+                    ]
+                });
+            } catch (e) {
+                infoMessage.textContent = 'Could not initialize barcode detector. ' + e.message;
+                scanButton.disabled = true;
+                return;
+            }
+
+            // --- Audio Beep Function ---
+            /**
+             * Plays a short beep sound using the Web Audio API.
+             */
+            function playBeep() {
+                if (!audioContext) return; // Don't play if context isn't ready
+
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+
+                // Configure the beep sound
+                oscillator.frequency.value = 880; // A high-pitched beep (A5 note)
+                oscillator.type = 'sine'; // A clean sound
+
+                // Control the volume to make it a short "beep"
+                gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+                gainNode.gain.linearRampToValueAtTime(0.5, audioContext.currentTime + 0.05); // Ramp up to 50% volume
+                gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.2); // Ramp down to 0 over 0.2s
+
+                oscillator.start();
+                oscillator.stop(audioContext.currentTime + 0.2); // Stop the sound after 0.2 seconds
+            }
+
+            // --- Event Listener for the Scan Button ---
+            scanButton.addEventListener('click', async () => {
+                // Initialize AudioContext on the first user interaction (required by browsers)
+                if (!audioContext) {
+                    try {
+                        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    } catch (e) {
+                        console.warn("Web Audio API is not supported in this browser.");
+                    }
+                }
+
+                if (isScanning) {
+                    stopScan();
+                } else {
+                    await startScan();
+                }
+            });
+
+            // --- Core Functions ---
+
+            /**
+             * Starts the camera and the scanning process.
+             */
+            async function startScan() {
+                // Prevent starting a new scan if one is already active
+                if (isScanning || !barcodeDetector) return;
+
+                try {
+                    // Request access to the user's camera.
+                    // 'environment' prefers the rear camera, which is what we want.
+                    stream = await navigator.mediaDevices.getUserMedia({
+                        video: {
+                            facingMode: 'environment'
+                        },
+                        audio: false
+                    });
+
+                    video.srcObject = stream;
+                    await video.play();
+                    
+                    // Update UI for scanning state
+                    video.classList.add('active');
+                    scanButton.textContent = 'Stop Scan';
+                    resultText.textContent = 'Point camera at a barcode...';
+                    infoMessage.textContent = 'Scanning...';
+                    isScanning = true;
+
+                    // Start the detection loop
+                    requestAnimationFrame(detectBarcode);
+
+                } catch (err) {
+                    console.error("Camera access error:", err);
+                    infoMessage.textContent = 'Could not access the camera. Please grant permission and try again.';
+                    isScanning = false;
+                }
+            }
+
+            /**
+             * Stops the camera stream and scanning process.
+             */
+            function stopScan() {
+                if (stream) {
+                    stream.getTracks().forEach(track => track.stop());
+                }
+                video.srcObject = null;
+                video.classList.remove('active');
+                scanButton.textContent = 'Start Scan';
+                infoMessage.textContent = 'Scan stopped. Click to start again.';
+                isScanning = false;
+            }
+
+            /**
+             * Continuously detects barcodes from the video stream.
+             */
+            async function detectBarcode() {
+                // Only run detection if scanning is active and the detector is ready
+                if (!isScanning || !barcodeDetector) return;
+
+                try {
+                    // Detect barcodes in the current video frame
+                    const barcodes = await barcodeDetector.detect(video);
+
+                    if (barcodes.length > 0) {
+                        // A barcode was found!
+                        isScanning = false; // Stop the detection loop immediately
+                        const foundBarcode = barcodes[0].rawValue;
+                        resultText.textContent = foundBarcode;
+                        infoMessage.textContent = 'Success! Camera will stop shortly.';
+                        
+                        // Play beep sound
+                        playBeep();
+
+                        // Vibrate to give feedback (if supported)
+                        if ('vibrate' in navigator) {
+                            navigator.vibrate(200); // Vibrate for 200ms
+                        }
+                        
+                        // Stop scanning after a successful detection with a delay
+                        setTimeout(() => {
+                            stopScan();
+                        }, 1500); // Wait 1.5 seconds before stopping the camera
+                        
+                    } else {
+                        // No barcode found, continue the loop
+                        requestAnimationFrame(detectBarcode);
+                    }
+                } catch (e) {
+                    // This can happen if the video is not ready yet.
+                    // We just continue the loop.
+                    console.warn("Detection error:", e.message);
+                    if (isScanning) {
+                       requestAnimationFrame(detectBarcode);
+                    }
+                }
+            }
+        })();
+    </script>
+
+</body>
+</html>
