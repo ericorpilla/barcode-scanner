@@ -76,10 +76,19 @@
         <p>Powered by ZXing JS Library</p>
     </footer>
 
-    <!-- ZXing Library (Bundled UMD version for better compatibility) -->
-    <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.20.0/umd/zxing.min.js"></script>
+    <!-- ZXing Library from unpkg CDN with an error handler -->
+    <script src="https://unpkg.com/@zxing/library@0.20.0/umd/zxing.min.js" onerror="handleLibraryLoadError()"></script>
     
     <script>
+        // This function is called if the script tag above fails to load.
+        function handleLibraryLoadError() {
+            console.error('Failed to load ZXing library from CDN.');
+            const resultElement = document.getElementById('result');
+            if (resultElement) {
+                resultElement.innerHTML = '<b>Fatal Error:</b> The scanning library could not be downloaded. This might be due to a network issue, ad-blocker, or firewall. Please try a different network or disable any ad-blockers.';
+            }
+        }
+
         // Use window.addEventListener('load', ...) to ensure the entire page,
         // including the ZXing library, is fully loaded before the script runs.
         window.addEventListener('load', () => {
@@ -94,8 +103,11 @@
             
             // Check if the ZXing library is loaded.
             if (typeof ZXing === 'undefined') {
-                console.error('ZXing library not loaded.');
-                resultElement.innerHTML = '<b>Error:</b> Could not load the scanning library. Please check your internet connection and refresh.';
+                // The onerror handler should catch this, but this is a fallback.
+                console.error('ZXing library not loaded by the time window.load fired.');
+                if (!resultElement.innerHTML.includes('Fatal Error')) {
+                   resultElement.innerHTML = '<b>Error:</b> Could not initialize the scanning library. Please refresh the page.';
+                }
                 return;
             }
 
