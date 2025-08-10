@@ -172,14 +172,11 @@
                     return;
                 }
                 
-                // --- Create CLEANED UP hints for the reader ---
+                // --- Create FOCUSED hints for the reader ---
                 const hints = new Map();
-                // Specify only the most relevant barcode formats
+                // ** MODIFICATION: Only look for CODE_128 for maximum speed **
                 const formats = [
                     ZXing.BarcodeFormat.CODE_128,
-                    ZXing.BarcodeFormat.EAN_13,
-                    ZXing.BarcodeFormat.DATA_MATRIX,
-                    ZXing.BarcodeFormat.QR_CODE,
                 ];
                 hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, formats);
                 
